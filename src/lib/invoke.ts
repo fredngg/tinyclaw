@@ -1,8 +1,7 @@
-import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { AgentConfig, TeamConfig, ConversationMessage } from './types';
-import { SCRIPT_DIR, resolveOpenRouterModel, resolveCodexModel } from './config';
+import { SCRIPT_DIR, resolveOpenRouterModel } from './config';
 import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent-setup';
 
@@ -10,43 +9,6 @@ import { ensureAgentDirectory, updateAgentTeammates } from './agent-setup';
 const agentConversations = new Map<string, ConversationMessage[]>();
 
 const MAX_HISTORY_MESSAGES = 40; // keep last N messages to avoid unbounded growth
-
-export async function runCommand(command: string, args: string[], cwd?: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(command, args, {
-            cwd: cwd || SCRIPT_DIR,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout.setEncoding('utf8');
-        child.stderr.setEncoding('utf8');
-
-        child.stdout.on('data', (chunk: string) => {
-            stdout += chunk;
-        });
-
-        child.stderr.on('data', (chunk: string) => {
-            stderr += chunk;
-        });
-
-        child.on('error', (error) => {
-            reject(error);
-        });
-
-        child.on('close', (code) => {
-            if (code === 0) {
-                resolve(stdout);
-                return;
-            }
-
-            const errorMessage = stderr.trim() || `Command exited with code ${code}`;
-            reject(new Error(errorMessage));
-        });
-    });
-}
 
 /**
  * Invoke a model via OpenRouter's chat completion API.
@@ -147,58 +109,16 @@ export async function invokeAgent(
     // Update AGENTS.md with current teammate info
     updateAgentTeammates(agentDir, agentId, agents, teams);
 
+    // SECURITY: All providers route through OpenRouter HTTP API.
+    // No local CLI execution. OpenRouter supports both Anthropic and OpenAI models.
     const provider = agent.provider || 'openrouter';
 
     if (provider === 'openai') {
-        log('INFO', `Using Codex CLI (agent: ${agentId})`);
-
-        const shouldResume = !shouldReset;
-
-        if (shouldReset) {
-            log('INFO', `🔄 Resetting Codex conversation for agent: ${agentId}`);
-        }
-
-        const modelId = resolveCodexModel(agent.model);
-        const codexArgs = ['exec'];
-        if (shouldResume) {
-            codexArgs.push('resume', '--last');
-        }
-        if (modelId) {
-            codexArgs.push('--model', modelId);
-        }
-
-        // Resolve working directory
-        const workingDir = agent.working_directory
-            ? (path.isAbsolute(agent.working_directory)
-                ? agent.working_directory
-                : path.join(workspacePath, agent.working_directory))
-            : agentDir;
-
-        codexArgs.push('--json', message);
-
-        const codexOutput = await runCommand('codex', codexArgs, workingDir);
-
-        // Parse JSONL output and extract final agent_message
-        let response = '';
-        const lines = codexOutput.trim().split('\n');
-        for (const line of lines) {
-            try {
-                const json = JSON.parse(line);
-                if (json.type === 'item.completed' && json.item?.type === 'agent_message') {
-                    response = json.item.text;
-                }
-            } catch (e) {
-                // Ignore lines that aren't valid JSON
-            }
-        }
-
-        return response || 'Sorry, I could not generate a response from Codex.';
-    } else {
-        // Default to OpenRouter (replaces Claude CLI)
-        log('INFO', `Using OpenRouter provider (agent: ${agentId})`);
-
-        const modelId = resolveOpenRouterModel(agent.model);
-
-        return await invokeOpenRouter(agentId, message, modelId, shouldReset);
+        log('WARN', `Provider "openai" is deprecated. Routing through OpenRouter. ` +
+            `Update settings to use provider: "openrouter" (agent: ${agentId})`);
     }
+
+    log('INFO', `Using OpenRouter provider (agent: ${agentId})`);
+    const modelId = resolveOpenRouterModel(agent.model);
+    return await invokeOpenRouter(agentId, message, modelId, shouldReset);
 }

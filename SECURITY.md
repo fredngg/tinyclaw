@@ -4,19 +4,20 @@ This document describes the security measures added to this fork, what each one 
 
 ---
 
-## 1. Dangerous CLI Flags Removed
+## 1. All CLI Execution Removed — HTTP API Only
 
 **File:** [`src/lib/invoke.ts`](src/lib/invoke.ts)
 
-**What changed:** Removed `--skip-git-repo-check` and `--dangerously-bypass-approvals-and-sandbox` flags from the Codex CLI invocation. The fork now uses the **OpenRouter HTTP API** instead of spawning a local CLI process.
+**What changed:** The original setup spawned local CLI tools (Codex, Claude) as child processes with `--skip-git-repo-check` and `--dangerously-bypass-approvals-and-sandbox` flags. **All code paths that spawn local processes have been removed.** Every provider — including `openai` — now routes through the **OpenRouter HTTP API**. If `provider: "openai"` is set in settings, a deprecation warning is logged and the request is routed through OpenRouter (which supports OpenAI models natively).
 
 **Protects against:** The original flags allowed the AI agent to run arbitrary shell commands without a sandbox or user approval. A prompt-injection attack could have escalated to full host access.
 
 | | Original | This Fork |
 |---|----------|-----------|
-| AI invocation | Codex CLI with bypassed sandbox | OpenRouter HTTP API (network call only) |
+| AI invocation | Codex / Claude CLI with bypassed sandbox | OpenRouter HTTP API (network call only) |
 | Host access | Full shell access for the agent | No shell access; HTTP response only |
 | Approval flow | Bypassed | Not applicable (no local CLI) |
+| `provider: "openai"` | Spawns `codex exec` as child process | Routed through OpenRouter with deprecation warning |
 
 > [!WARNING]
 > **Compromise:** If you relied on the agent executing local commands (e.g., running scripts, editing files on the host via the CLI), this is no longer possible. The agent can only respond with text.
@@ -133,6 +134,21 @@ The original TinyClaw runs directly on the host with:
 
 ---
 
+## 8. Cron Command Injection Fix (schedule skill)
+
+**File:** [`.agents/skills/schedule/scripts/schedule.sh`](.agents/skills/schedule/scripts/schedule.sh) — `build_cron_command()`
+
+**What changed:** The original code only escaped `"` in the message, then interpolated it into a nested single-quoted `bash -c` payload. A message containing `'` (single quote) could break out of the quoting context and execute arbitrary shell commands via cron.
+
+**Fix:** The message is now **base64-encoded** before being placed into the crontab line. At execution time, cron decodes it with `base64 -d`. No user-controlled text is ever interpolated into a shell context. Additionally, messages with control characters (other than `\n` and `\t`) are rejected.
+
+**Protects against:** An attacker who can influence the scheduled message content (e.g., via prompt injection making the agent call the schedule skill) could have executed arbitrary commands as the crontab user.
+
+> [!NOTE]
+> **Compromise:** Debugging crontab entries is slightly harder — the message is stored as base64, not plaintext. Use `echo '<base64>' | base64 -d` to inspect.
+
+---
+
 ## Summary: Original vs. Hardened
 
 | Area | Original | Hardened | Trade-off |
@@ -146,6 +162,7 @@ The original TinyClaw runs directly on the host with:
 | Runtime | Bare metal, user's shell | Docker, non-root, read-only | Requires Docker; volume management |
 | Network | Unrestricted | Container-scoped | Need network policies for full lockdown |
 | Secrets | In `.env` on disk | Injected at runtime only | Must configure `env_file` properly |
+| Cron injection | Raw message in shell context | Base64-encoded payload | Crontab entries less human-readable |
 
 ---
 

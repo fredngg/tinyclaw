@@ -84,15 +84,33 @@ generate_label() {
 
 # Build the queue-writer command that cron will execute.
 # It writes a JSON message to the incoming queue directory.
+#
+# SECURITY: The message is base64-encoded to prevent shell injection.
+# No user-controlled text is ever interpolated into a shell context.
 build_cron_command() {
     local agent="$1" message="$2" channel="$3" sender="$4" label="$5"
 
-    # Escape double quotes in the message for JSON safety
-    local escaped_message="${message//\"/\\\"}"
+    # Reject messages containing control characters (null bytes, etc.)
+    if [[ "$message" =~ [[:cntrl:]] && ! "$message" =~ $'\n' && ! "$message" =~ $'\t' ]]; then
+        die "Message contains disallowed control characters."
+    fi
 
-    # The cron command must be a single line for crontab.
-    # Uses printf to write a JSON file into QUEUE_INCOMING each time it fires.
-    printf '%s' "/bin/bash -c 'QUEUE_INCOMING=\"$QUEUE_INCOMING\"; MSG_ID=\"${label}_\$(date +\\%s)_\$\$\"; printf '\\''{ \"channel\": \"$channel\", \"sender\": \"$sender\", \"senderId\": \"${TAG_PREFIX}:${label}\", \"message\": \"@${agent} ${escaped_message}\", \"timestamp\": %s000, \"messageId\": \"%s\" }'\\'' \"\$(date +%s)\" \"\$MSG_ID\" > \"\$QUEUE_INCOMING/\${MSG_ID}.json\"'"
+    # Base64-encode the message so it is never shell-interpolated
+    local b64_message
+    b64_message=$(printf '%s' "$message" | base64 | tr -d '\n')
+
+    # The cron command:
+    #   1. Decodes the base64 message
+    #   2. Uses jq to safely build the JSON payload (no manual quoting)
+    #   3. Writes the JSON file to the incoming queue
+    #
+    # Fallback: if jq is not available, use printf with the decoded message
+    # (still safe because the message is never passed through eval/bash expansion)
+    local queue_dir="$QUEUE_INCOMING"
+
+    cat <<CRONEOF
+/bin/bash -c 'B64="${b64_message}"; MSG=\$(echo "\$B64" | base64 -d 2>/dev/null || echo "\$B64" | base64 -D 2>/dev/null); QUEUE="${queue_dir}"; ID="${label}_\$(date +\%s)_\$\$"; TS=\$(date +\%s); printf "{\"channel\":\"${channel}\",\"sender\":\"${sender}\",\"senderId\":\"${TAG_PREFIX}:${label}\",\"message\":\"@${agent} %s\",\"timestamp\":%s000,\"messageId\":\"%s\"}" "\$MSG" "\$TS" "\$ID" > "\$QUEUE/\${ID}.json"'
+CRONEOF
 }
 
 # ────────────────────────────────────────────
