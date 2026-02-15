@@ -5,7 +5,7 @@ Thanks for your interest in contributing!
 ## Getting Started
 
 ```bash
-git clone https://github.com/jlia0/tinyclaw.git
+git clone https://github.com/fredngg/tinyclaw.git
 cd tinyclaw
 npm install
 npm run build
@@ -41,7 +41,7 @@ npm run build
 
 ## Reporting Issues
 
-Open an issue at [github.com/jlia0/tinyclaw/issues](https://github.com/jlia0/tinyclaw/issues) with:
+Open an issue at [github.com/fredngg/tinyclaw/issues](https://github.com/fredngg/tinyclaw/issues) with:
 
 - What you expected vs what happened
 - Steps to reproduce

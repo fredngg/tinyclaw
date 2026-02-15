@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # TinyClaw Remote Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/jlia0/tinyclaw/main/scripts/remote-install.sh | bash
+# SECURITY: Download and inspect before running — do NOT pipe directly from curl to bash
+# Usage: curl -fsSL -o /tmp/tinyclaw-install.sh https://raw.githubusercontent.com/fredngg/tinyclaw/main/scripts/remote-install.sh
+#        less /tmp/tinyclaw-install.sh && bash /tmp/tinyclaw-install.sh
 
 set -e
 
@@ -12,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Configuration
-GITHUB_REPO="jlia0/tinyclaw"
+GITHUB_REPO="fredngg/tinyclaw"
 DEFAULT_BRANCH="main"
 INSTALL_DIR=""
 

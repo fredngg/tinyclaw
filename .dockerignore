@@ -1,0 +1,40 @@
+# Secrets — NEVER baked into Docker image
+.env
+.env.*
+!.env.example
+
+# Runtime data
+.tinyclaw/
+node_modules/
+dist/
+
+# Source control
+.git/
+.gitignore
+
+# Build artifacts
+*.tgz
+*.tar.gz
+
+# IDE / OS files
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Documentation (not needed in image)
+README.md
+CHANGELOG.md
+docs/
+*.md
+!package.json
+
+# Tests
+__tests__/
+*.test.ts
+*.spec.ts
+coverage/
+
+# Dev config
+.eslintrc*
+.prettierrc*

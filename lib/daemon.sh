@@ -11,30 +11,16 @@ start_daemon() {
 
     log "Starting TinyClaw daemon..."
 
-    # Check if Node.js dependencies are installed
+    # SECURITY: Require prebuilt artifacts — no auto npm install or tsc build at runtime
     if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
-        echo -e "${YELLOW}Installing Node.js dependencies...${NC}"
-        cd "$SCRIPT_DIR"
-        PUPPETEER_SKIP_DOWNLOAD=true npm install
+        echo -e "${RED}Error: node_modules/ not found. Run 'npm ci' during build, not at runtime.${NC}"
+        echo -e "${RED}This prevents supply-chain attacks from auto-installing packages.${NC}"
+        return 1
     fi
 
-    # Build TypeScript if any src file is newer than its dist counterpart
-    local needs_build=false
     if [ ! -d "$SCRIPT_DIR/dist" ]; then
-        needs_build=true
-    else
-        for ts_file in "$SCRIPT_DIR"/src/*.ts; do
-            local js_file="$SCRIPT_DIR/dist/$(basename "${ts_file%.ts}.js")"
-            if [ ! -f "$js_file" ] || [ "$ts_file" -nt "$js_file" ]; then
-                needs_build=true
-                break
-            fi
-        done
-    fi
-    if [ "$needs_build" = true ]; then
-        echo -e "${YELLOW}Building TypeScript...${NC}"
-        cd "$SCRIPT_DIR"
-        npm run build
+        echo -e "${RED}Error: dist/ not found. Run 'npm run build' during build, not at runtime.${NC}"
+        return 1
     fi
 
     # Load settings or run setup wizard

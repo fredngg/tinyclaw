@@ -1,8 +1,13 @@
 export interface AgentConfig {
     name: string;
-    provider: string;       // 'anthropic' or 'openai'
+    provider: string;       // 'openrouter' or 'openai'
     model: string;           // e.g. 'sonnet', 'opus', 'gpt-5.3-codex'
     working_directory: string;
+}
+
+export interface ConversationMessage {
+    role: 'system' | 'user' | 'assistant';
+    content: string;
 }
 
 export interface TeamConfig {
@@ -97,6 +102,13 @@ export const CLAUDE_MODEL_IDS: Record<string, string> = {
     'opus': 'claude-opus-4-6',
     'claude-sonnet-4-5': 'claude-sonnet-4-5',
     'claude-opus-4-6': 'claude-opus-4-6'
+};
+
+export const OPENROUTER_MODEL_IDS: Record<string, string> = {
+    'sonnet': 'anthropic/claude-sonnet-4-5',
+    'opus': 'anthropic/claude-opus-4-6',
+    'claude-sonnet-4-5': 'anthropic/claude-sonnet-4-5',
+    'claude-opus-4-6': 'anthropic/claude-opus-4-6',
 };
 
 export const CODEX_MODEL_IDS: Record<string, string> = {

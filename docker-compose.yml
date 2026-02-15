@@ -1,0 +1,89 @@
+# =============================================================================
+# TinyClaw Docker Compose — Ultra-Safe Configuration
+# =============================================================================
+# Security layers:
+#   - Non-root: user 1000:1000
+#   - Read-only rootfs + explicit tmpfs
+#   - All capabilities dropped
+#   - No new privileges
+#   - Strict resource limits (CPU, RAM, PIDs)
+#   - Only required data dirs mounted
+#   - No host home, SSH keys, cloud creds, or Docker socket
+# =============================================================================
+
+services:
+  tinyclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tinyclaw:secure
+    container_name: tinyclaw
+    restart: unless-stopped
+    user: "1000:1000"
+
+    # --- Secrets (runtime only, never baked into image) ---
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - TINYCLAW_HOME=/data/tinyclaw
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+    # --- Security Hardening ---
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+
+    # Writable tmpfs for temp files and runtime state
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+      - /run:size=16m,noexec,nosuid,nodev
+
+    # --- Volumes: ONLY required data dirs ---
+    # NEVER mount: /, ~, ~/.ssh, ~/.config/gcloud, /var/run/docker.sock
+    volumes:
+      - tinyclaw-data:/data/tinyclaw        # Queue, logs, settings, events
+      - tinyclaw-workspace:/data/tinyclaw/workspace  # Agent working directories
+      - tinyclaw-whatsapp:/data/whatsapp     # WhatsApp session persistence
+
+    # --- Resource Limits ---
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+          pids: 256
+        reservations:
+          cpus: "0.5"
+          memory: 256m
+
+    # --- Network: restrict egress ---
+    networks:
+      - tinyclaw-net
+
+    # --- Logging: rotation to prevent disk fill ---
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# --- Named volumes (not host bind mounts) ---
+volumes:
+  tinyclaw-data:
+  tinyclaw-workspace:
+  tinyclaw-whatsapp:
+
+# --- Network with DNS for outbound resolution ---
+networks:
+  tinyclaw-net:
+    driver: bridge
+    # To enforce outbound allowlist, add iptables rules in docker-entrypoint.sh
+    # or use a network policy tool (Calico, Cilium) in production.
+    # Required outbound endpoints:
+    #   - openrouter.ai (443)           — AI model API
+    #   - discord.com (443)             — Discord bot
+    #   - api.telegram.org (443)        — Telegram bot
+    #   - web.whatsapp.com (443)        — WhatsApp Web
+    #   - api.github.com (443)          — Update checks

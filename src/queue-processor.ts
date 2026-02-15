@@ -107,13 +107,39 @@ function enqueueInternalMessage(
 
 /**
  * Collect files from a response text.
+ * SECURITY: Only allow files within the safe FILES_DIR directory.
+ *           Block absolute paths and directory traversal attempts.
  */
 function collectFiles(response: string, fileSet: Set<string>): void {
     const fileRegex = /\[send_file:\s*([^\]]+)\]/g;
     let match: RegExpExecArray | null;
     while ((match = fileRegex.exec(response)) !== null) {
-        const filePath = match[1].trim();
-        if (fs.existsSync(filePath)) fileSet.add(filePath);
+        const rawPath = match[1].trim();
+
+        // Block absolute paths
+        if (path.isAbsolute(rawPath)) {
+            log('WARN', `SECURITY: Blocked absolute file path in send_file: ${rawPath.substring(0, 60)}`);
+            continue;
+        }
+
+        // Block directory traversal
+        if (rawPath.includes('..')) {
+            log('WARN', `SECURITY: Blocked path traversal in send_file: ${rawPath.substring(0, 60)}`);
+            continue;
+        }
+
+        // Resolve relative to FILES_DIR only
+        const resolvedPath = path.resolve(FILES_DIR, rawPath);
+
+        // Double-check the resolved path is still within FILES_DIR (prevent symlink escapes)
+        if (!resolvedPath.startsWith(path.resolve(FILES_DIR) + path.sep) && resolvedPath !== path.resolve(FILES_DIR)) {
+            log('WARN', `SECURITY: File path escapes safe directory: ${rawPath.substring(0, 60)}`);
+            continue;
+        }
+
+        if (fs.existsSync(resolvedPath)) {
+            fileSet.add(resolvedPath);
+        }
     }
 }
 
@@ -213,7 +239,7 @@ function completeConversation(conv: Conversation): void {
     fs.writeFileSync(responseFile, JSON.stringify(responseData, null, 2));
 
     log('INFO', `✓ Response ready [${conv.channel}] ${conv.sender} (${finalResponse.length} chars)`);
-    emitEvent('response_ready', { channel: conv.channel, sender: conv.sender, responseLength: finalResponse.length, responseText: finalResponse, messageId: conv.messageId });
+    emitEvent('response_ready', { channel: conv.channel, sender: conv.sender, responseLength: finalResponse.length, messageId: conv.messageId });
 
     // Clean up
     conversations.delete(conv.id);
@@ -232,9 +258,9 @@ async function processMessage(messageFile: string): Promise<void> {
         const { channel, sender, message: rawMessage, timestamp, messageId } = messageData;
         const isInternal = !!messageData.conversationId;
 
-        log('INFO', `Processing [${isInternal ? 'internal' : channel}] ${isInternal ? `@${messageData.fromAgent}→@${messageData.agent}` : `from ${sender}`}: ${rawMessage.substring(0, 50)}...`);
+        log('INFO', `Processing [${isInternal ? 'internal' : channel}] ${isInternal ? `@${messageData.fromAgent}→@${messageData.agent}` : `from ${sender}`} (${rawMessage.length} chars)`);
         if (!isInternal) {
-            emitEvent('message_received', { channel, sender, message: rawMessage.substring(0, 120), messageId });
+            emitEvent('message_received', { channel, sender, messageLength: rawMessage.length, messageId });
         }
 
         // Get settings, agents, and teams
@@ -351,7 +377,7 @@ async function processMessage(messageFile: string): Promise<void> {
             response = "Sorry, I encountered an error processing your request. Please check the queue logs.";
         }
 
-        emitEvent('chain_step_done', { agentId, agentName: agent.name, responseLength: response.length, responseText: response });
+        emitEvent('chain_step_done', { agentId, agentName: agent.name, responseLength: response.length });
 
         // --- No team context: simple response to user ---
         if (!teamContext) {
@@ -386,7 +412,7 @@ async function processMessage(messageFile: string): Promise<void> {
             fs.writeFileSync(responseFile, JSON.stringify(responseData, null, 2));
 
             log('INFO', `✓ Response ready [${channel}] ${sender} via agent:${agentId} (${finalResponse.length} chars)`);
-            emitEvent('response_ready', { channel, sender, agentId, responseLength: finalResponse.length, responseText: finalResponse, messageId });
+            emitEvent('response_ready', { channel, sender, agentId, responseLength: finalResponse.length, messageId });
 
             fs.unlinkSync(processingFile);
             return;

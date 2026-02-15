@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Settings, AgentConfig, TeamConfig, CLAUDE_MODEL_IDS, CODEX_MODEL_IDS } from './types';
+import { Settings, AgentConfig, TeamConfig, CLAUDE_MODEL_IDS, OPENROUTER_MODEL_IDS, CODEX_MODEL_IDS } from './types';
 
 export const SCRIPT_DIR = path.resolve(__dirname, '../..');
 const _localTinyclaw = path.join(SCRIPT_DIR, '.tinyclaw');
@@ -87,6 +87,13 @@ export function getTeams(settings: Settings): Record<string, TeamConfig> {
  */
 export function resolveClaudeModel(model: string): string {
     return CLAUDE_MODEL_IDS[model] || model || '';
+}
+
+/**
+ * Resolve the model ID for OpenRouter.
+ */
+export function resolveOpenRouterModel(model: string): string {
+    return OPENROUTER_MODEL_IDS[model] || model || '';
 }
 
 /**
