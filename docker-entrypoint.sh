@@ -12,6 +12,13 @@ echo "║   TinyClaw — Secure Container Start   ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 
+# --- Security: verify we are NOT root ---
+if [ "$(id -u)" = "0" ]; then
+    echo "ERROR: Container is running as root! This violates security policy."
+    echo "       Use 'user: 1000:1000' in docker-compose.yml"
+    exit 1
+fi
+
 # --- Validate required environment variables ---
 REQUIRED_VARS=("OPENROUTER_API_KEY")
 OPTIONAL_VARS=("DISCORD_BOT_TOKEN" "TELEGRAM_BOT_TOKEN")
@@ -49,19 +56,23 @@ if [ "$HAS_CHANNEL" = false ]; then
 fi
 
 # --- Ensure data directories exist ---
-TINYCLAW_HOME="${TINYCLAW_HOME:-/data/tinyclaw}"
-mkdir -p "$TINYCLAW_HOME/queue/incoming" \
-         "$TINYCLAW_HOME/queue/outgoing" \
-         "$TINYCLAW_HOME/queue/processing" \
-         "$TINYCLAW_HOME/logs" \
-         "$TINYCLAW_HOME/events" \
-         "$TINYCLAW_HOME/chats" \
-         "$TINYCLAW_HOME/files"
+DATA_DIR="/data/tinyclaw"
+mkdir -p "$DATA_DIR/queue/incoming" \
+         "$DATA_DIR/queue/outgoing" \
+         "$DATA_DIR/queue/processing" \
+         "$DATA_DIR/logs" \
+         "$DATA_DIR/events" \
+         "$DATA_DIR/chats" \
+         "$DATA_DIR/channels" \
+         "$DATA_DIR/files"
+
+# Ensure LOG_DIR exists (tinyclaw.sh uses $HOME/.tinyclaw/logs)
+mkdir -p "$HOME/.tinyclaw/logs"
 
 # --- Create settings.json if it doesn't exist ---
-if [ ! -f "$TINYCLAW_HOME/settings.json" ]; then
+if [ ! -f "$DATA_DIR/settings.json" ]; then
     echo "Creating default settings.json..."
-    cat > "$TINYCLAW_HOME/settings.json" << 'SETTINGS_EOF'
+    cat > "$DATA_DIR/settings.json" << 'SETTINGS_EOF'
 {
     "channels": {},
     "models": {
@@ -79,13 +90,6 @@ if [ ! -f "$TINYCLAW_HOME/settings.json" ]; then
 SETTINGS_EOF
 fi
 
-# --- Security: verify we are NOT root ---
-if [ "$(id -u)" = "0" ]; then
-    echo "ERROR: Container is running as root! This violates security policy."
-    echo "       Use 'user: 1000:1000' in docker-compose.yml"
-    exit 1
-fi
-
 echo "Security checks passed:"
 echo "  User: $(whoami) (UID=$(id -u))"
 echo "  Read-only rootfs: $(mount | grep ' / ' | grep -q 'ro' && echo 'yes' || echo 'no (warning)')"
@@ -94,4 +98,19 @@ echo ""
 
 # --- Start TinyClaw ---
 echo "Starting TinyClaw daemon..."
-exec bash ./tinyclaw.sh start
+cd /app
+
+# Start the tmux-based daemon
+bash ./tinyclaw.sh start
+
+# Keep the container alive by following the tmux session.
+# When the tmux session ends, the container stops gracefully.
+echo "TinyClaw daemon started. Tailing logs to keep container alive..."
+echo "Press Ctrl+C (or send SIGTERM) to stop."
+
+# Tail the queue log to keep the process alive and provide output
+exec tail -f /data/tinyclaw/logs/queue.log \
+             /data/tinyclaw/logs/*.log \
+             "$HOME/.tinyclaw/logs/"*.log 2>/dev/null || \
+    # Fallback: wait indefinitely if no logs exist yet
+    exec sleep infinity

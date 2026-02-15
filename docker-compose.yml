@@ -25,7 +25,6 @@ services:
     env_file: .env
     environment:
       - NODE_ENV=production
-      - TINYCLAW_HOME=/data/tinyclaw
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
     # --- Security Hardening ---
@@ -39,6 +38,7 @@ services:
     tmpfs:
       - /tmp:size=64m,noexec,nosuid,nodev
       - /run:size=16m,noexec,nosuid,nodev
+      - /home/tinyclaw:size=32m,noexec,nosuid,nodev
 
     # --- Volumes: ONLY required data dirs ---
     # NEVER mount: /, ~, ~/.ssh, ~/.config/gcloud, /var/run/docker.sock

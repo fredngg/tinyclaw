@@ -14,8 +14,8 @@ WORKDIR /build
 COPY package.json package-lock.json* ./
 RUN npm ci --ignore-scripts
 
-# Copy source and build
-COPY tsconfig.json ./
+# Copy source and compile TypeScript
+COPY tsconfig.json tsconfig.visualizer.json ./
 COPY src/ ./src/
 RUN npm run build
 
@@ -25,7 +25,7 @@ RUN npm prune --omit=dev
 # --- Stage 2: Runtime ---
 FROM node:22-slim AS runtime
 
-LABEL maintainer="jlia0"
+LABEL maintainer="fredngg"
 LABEL description="TinyClaw AI Assistant — Hardened Container"
 
 # Install minimal runtime deps only
@@ -44,7 +44,9 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV CHROME_BIN=/usr/bin/chromium
 
 # Create non-root user (UID/GID 1000 to match --user 1000:1000)
-RUN groupadd -g 1000 tinyclaw && \
+# node:22-slim already has node:node at 1000:1000, so remove it first
+RUN userdel -r node 2>/dev/null || true && \
+    groupadd -g 1000 tinyclaw 2>/dev/null || groupmod -n tinyclaw node && \
     useradd -u 1000 -g tinyclaw -m -s /bin/bash tinyclaw
 
 # App directory
@@ -63,7 +65,8 @@ COPY --chown=tinyclaw:tinyclaw docker-entrypoint.sh ./
 
 RUN chmod +x tinyclaw.sh docker-entrypoint.sh bin/* lib/*.sh
 
-# Create required directories owned by tinyclaw
+# Create required data directories owned by tinyclaw
+# The .tinyclaw symlink points app-relative paths to the data volume
 RUN mkdir -p /data/tinyclaw/queue/incoming \
              /data/tinyclaw/queue/outgoing \
              /data/tinyclaw/queue/processing \
@@ -71,9 +74,15 @@ RUN mkdir -p /data/tinyclaw/queue/incoming \
              /data/tinyclaw/events \
              /data/tinyclaw/chats \
              /data/tinyclaw/files \
+             /data/tinyclaw/channels \
              /data/tinyclaw/workspace \
              /data/whatsapp \
-    && chown -R tinyclaw:tinyclaw /data
+    && chown -R tinyclaw:tinyclaw /data \
+    && ln -s /data/tinyclaw /app/.tinyclaw
+
+# Also create $HOME/.tinyclaw/logs for LOG_DIR fallback
+RUN mkdir -p /home/tinyclaw/.tinyclaw/logs \
+    && chown -R tinyclaw:tinyclaw /home/tinyclaw/.tinyclaw
 
 # No ports exposed (outbound-only connections)
 
